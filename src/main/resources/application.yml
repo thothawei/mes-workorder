@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: mes-workorder
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/mes}
+    username: ${DB_USER:mes}
+    password: ${DB_PASSWORD:mes}
+    hikari:
+      # 連線池大小抓「CPU 核數 × 2 + 硬碟數」的經驗值。
+      # 傳產內部系統同時上線人數有限，開太大只是浪費資料庫連線。
+      maximum-pool-size: 10
+      connection-timeout: 3000
+
+  jpa:
+    hibernate:
+      # schema 由 Flyway 管，JPA 只負責「驗證程式碼與資料表對得上」。
+      # 設成 update 會讓正式環境的資料表被程式偷偷改掉，是傳產系統的災難來源。
+      ddl-auto: validate
+    # 關閉 open-in-view：讓 lazy loading 在 Service 交易外直接爆炸，
+    # 而不是在 View 層默默多打十幾次 SQL。問題早點浮出來比較好修。
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    validate-on-migrate: true
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+  error:
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+
+app:
+  jwt:
+    # 正式環境務必以環境變數覆寫。預設值只為了讓 clone 下來就能跑起來。
+    secret: ${JWT_SECRET:dev-only-secret-key-please-override-in-production}
+    expire-minutes: ${JWT_EXPIRE_MINUTES:480}
+  batch:
+    daily-settlement-cron: ${DAILY_SETTLEMENT_CRON:0 0 2 * * *}
+  demo-data:
+    # 建立示範帳號；正式環境設為 false
+    enabled: ${DEMO_DATA_ENABLED:true}
+
+logging:
+  level:
+    com.example.mes: DEBUG
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:INFO}

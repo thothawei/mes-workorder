@@ -1,0 +1,21 @@
+# 無 Docker 環境的輕量啟動設定
+#
+#   ./mvnw spring-boot:run -Dspring-boot.run.profiles=h2
+#
+# 用途是「讓對方三分鐘內看到系統跑起來」。所有 Flyway migration 都會照跑，
+# 所以看到的 schema 與正式環境完全一致——這是選 H2 而不是 ddl-auto:create 的原因。
+spring:
+  datasource:
+    url: jdbc:h2:mem:mes;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
