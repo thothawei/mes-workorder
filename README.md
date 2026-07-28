@@ -1,5 +1,8 @@
 # 工單報工與物料扣帳系統
 
+<!-- push 到 GitHub 後這顆 badge 才會顯示。若你的 repo 位置不同，改下面這行的 帳號/專案名 -->
+[![CI](https://github.com/thothawei/mes-workorder/actions/workflows/ci.yml/badge.svg)](https://github.com/thothawei/mes-workorder/actions/workflows/ci.yml)
+
 模擬製造現場從**派工 → 報工 → 依 BOM 扣料 → 完工 → 日結**的完整流程，Java 後端專案。
 
 系統邊界刻意收斂在四件事：工單、報工、物料扣帳、報表。不做採購、不做出貨、不做財務。
@@ -24,8 +27,13 @@ docker compose up -d
 
 | 入口 | 位置 |
 |---|---|
+| **現場報工頁** | http://localhost:8080/ |
 | API 文件 | http://localhost:8080/swagger-ui.html |
 | 健康檢查 | http://localhost:8080/actuator/health |
+| 資料庫（compose 模式） | `localhost:15432`，帳密皆為 `mes` |
+
+> compose 把 PostgreSQL 開在 **15432** 而不是 5432：開發機上通常已經有一個
+> PostgreSQL 或別的專案容器佔著 5432，直接用會讓人第一步就撞到 port 衝突。
 
 示範帳號（密碼皆為 `pass1234`）：
 
@@ -38,7 +46,21 @@ docker compose up -d
 種子資料是一張已派工的工單 `WO-20260728-001`（線性滑軌滑座，計畫 60 件），
 物料庫存刻意設成**只夠做 50 件**，可以直接跑出庫存不足回滾的行為。
 
-### 走一遍完整流程
+### 用畫面走一遍（推薦）
+
+打開 http://localhost:8080/ ，用 `operator01` 登入，點左邊任一張工單，然後：
+
+1. 按「**送出報工**」→ 綠色訊息顯示累計產出，下方列出這次扣掉哪些料、扣完剩多少，
+   左側清單即時變成「生產中」
+2. 按「**用同一把鍵再送一次**」→ 變成黃色的「已受理過，未重複計算」，
+   而且左側進度**不會翻倍**——這就是冪等鍵在做的事
+3. 把良品數改成 `45` 再送 → 紅色訊息「物料 M-SEAL-01 庫存不足：需要 90，可用 80」，
+   工單產出維持原樣，證明整筆交易回滾了
+
+這一頁是刻意做成單一 HTML 檔、零外部依賴（沒有 CDN、沒有前端框架）的。
+它的任務不是展示前端能力，而是讓人不必開 Swagger 拼 JSON 就能看懂系統在做什麼。
+
+### 走一遍完整流程（curl）
 
 ```bash
 TOKEN=$(curl -s -X POST localhost:8080/api/v1/auth/login \
@@ -168,6 +190,17 @@ INFO  ... 偵測到併發重送 key=same-key-0f69...，改回傳既有報工結�
 ```
 
 任何偷懶的實作——少了 UNIQUE 約束、少了鎖、把重試寫在交易內——都會在這裡露餡。
+
+### CI
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) 在 push 與 PR 時跑：
+
+1. `./mvnw test` — 單元測試（先跑，失敗代表領域邏輯真的壞了）
+2. `./mvnw verify` — 整合測試，runner 內建的 Docker 讓 Testcontainers 直接可用
+3. `docker build` — 確認映像檔還建得起來
+
+分兩步而不是直接 `verify`，是為了讓失敗時一眼看出是領域邏輯壞了還是整合層壞了。
+測試報告用 `if: always()` 上傳，失敗時才最需要它。
 
 ### 報表測試為什麼要斷言到每個欄位
 

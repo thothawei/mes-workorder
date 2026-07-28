@@ -15,12 +15,16 @@ COPY src ./src
 RUN mvn -B clean package -DskipTests
 
 # ---- 執行階段 ----
-# JRE 而非 JDK，映像檔小一半
-FROM eclipse-temurin:17-jre-alpine
+# JRE 而非 JDK，映像檔小一半。
+#
+# 用 jammy 而不是 alpine：Temurin 的 alpine 變體只發布 amd64，
+# 在 Apple Silicon（arm64）上會失敗於「no match for platform in manifest」。
+# 為了省那 100MB 而讓一半的開發者 build 不起來並不划算。
+FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
-# 不以 root 執行
-RUN addgroup -S mes && adduser -S mes -G mes
+# 不以 root 執行（Debian/Ubuntu 基底用 groupadd/useradd，不是 alpine 的 addgroup/adduser）
+RUN groupadd -r mes && useradd -r -g mes mes
 USER mes
 
 COPY --from=build /build/target/*.jar app.jar

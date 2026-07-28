@@ -39,6 +39,9 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/h2-console/**").permitAll()
+                        // 現場報工頁本身是公開的靜態檔，真正的把關在它呼叫的每一支 API 上。
+                        // 擋住 HTML 只會換來一個轉導迴圈，擋不住任何東西。
+                        .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico").permitAll()
                         .anyRequest().authenticated()
                 )
                 .headers(h -> h.frameOptions(f -> f.sameOrigin()))

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # 允許從 Actions 頁面手動觸發，方便驗證 workflow 本身
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 建置與測試
+    runs-on: ubuntu-latest
+    # 整套測試含 Testcontainers 啟動 PostgreSQL，正常約 2 分鐘；
+    # 設上限避免卡住的 job 一路燒掉 6 小時的預設額度
+    timeout-minutes: 20
+
+    steps:
+      - name: 取出原始碼
+        uses: actions/checkout@v4
+
+      # ubuntu-latest runner 內建 Docker daemon，Testcontainers 可直接使用，
+      # 不需要額外的 service container 設定。
+      - name: 設定 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          # 內建的 Maven 快取，省下每次重抓依賴的兩三分鐘
+          cache: 'maven'
+
+      - name: 單元測試
+        run: ./mvnw -B test
+
+      # 分成兩步而不是直接跑 verify，是為了讓失敗時一眼看出是「領域邏輯壞了」
+      # 還是「整合層壞了」——前者通常是真的改壞，後者常常是環境或測試資料問題。
+      - name: 整合測試（Testcontainers）
+        run: ./mvnw -B verify
+
+      - name: 上傳測試報告
+        # 失敗時最需要報告，所以用 always() 而不是預設的「前面成功才跑」
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+          retention-days: 7
+
+      - name: 驗證 Docker 映像檔可以建置
+        run: docker build -t mes-workorder:ci .

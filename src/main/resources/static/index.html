@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工單報工系統</title>
+<!--
+  現場報工介面。
+
+  刻意做成單一檔案、零外部依賴（沒有 CDN、沒有前端框架）：
+  這個專案的重心是後端，這一頁的任務只有一個——讓人在三分鐘內看懂系統在做什麼，
+  而不必先開 Swagger 拼湊 JSON。為此它只做四件事：登入、看工單、報工、示範重送冪等。
+
+  版面照現場平板設計：欄位大、按鈕大、數字大，錯誤訊息用完整中文句子而不是代碼。
+-->
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a2027;
+    --panel-2: #232b34;
+    --line: #2f3944;
+    --text: #e6edf3;
+    --muted: #8b96a5;
+    --accent: #4a9eff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --danger: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    font-size: 15px; line-height: 1.6;
+  }
+  header {
+    background: var(--panel); border-bottom: 1px solid var(--line);
+    padding: 14px 22px; display: flex; align-items: center; gap: 14px;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .who { margin-left: auto; color: var(--muted); font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 22px; }
+  .grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px; margin-bottom: 18px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 14px; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 5px; }
+  input, select {
+    width: 100%; padding: 10px 12px; font-size: 15px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 6px; color: var(--text);
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+  button {
+    padding: 11px 18px; font-size: 15px; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #06131f; border: none; border-radius: 6px;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > * { flex: 1; }
+  .actions { margin-top: 16px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; padding: 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--line); }
+  tr.pick { cursor: pointer; }
+  tr.pick:hover td { background: var(--panel-2); }
+  tr.on td { background: #1d2c3f; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .s-DRAFT       { background: #33363d; color: #b9c1cc; }
+  .s-RELEASED    { background: #17324d; color: #6cb6ff; }
+  .s-IN_PROGRESS { background: #14351d; color: #56d364; }
+  .s-ON_HOLD     { background: #3d3117; color: #e3b341; }
+  .s-COMPLETED   { background: #1c2b4a; color: #8ab4f8; }
+  .s-CLOSED      { background: #2b2b2b; color: #9198a1; }
+  .s-CANCELLED   { background: #3d1d1d; color: #ff8a80; }
+
+  .msg { padding: 12px 14px; border-radius: 7px; margin-top: 14px; font-size: 14px; display: none; }
+  .msg.on { display: block; }
+  .msg.ok   { background: #12261a; border: 1px solid #2d5a37; color: #7ee787; }
+  .msg.dup  { background: #2d2611; border: 1px solid #5c4a1a; color: #e3b341; }
+  .msg.bad  { background: #2d1618; border: 1px solid #6b2b2f; color: #ff9492; }
+
+  .bar { height: 7px; background: var(--panel-2); border-radius: 4px; overflow: hidden; margin-top: 5px; }
+  .bar > i { display: block; height: 100%; background: var(--ok); }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+  code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>工單報工系統</h1>
+  <span class="who" id="who"></span>
+  <button class="ghost hide" id="btnOut" style="flex:none;padding:6px 12px;font-size:13px">登出</button>
+</header>
+
+<main>
+
+  <!-- ---------- 登入 ---------- -->
+  <section id="pageLogin" class="card" style="max-width:420px;margin:60px auto">
+    <h2>登入</h2>
+    <label>帳號</label>
+    <input id="u" value="operator01" autocomplete="username">
+    <label>密碼</label>
+    <input id="p" type="password" value="pass1234" autocomplete="current-password">
+    <div class="actions">
+      <button id="btnIn" style="width:100%">登入</button>
+    </div>
+    <div class="hint">
+      示範帳號（密碼皆為 <code>pass1234</code>）：<br>
+      <code>operator01</code> 作業員 ·
+      <code>leader01</code> 線長 ·
+      <code>manager01</code> 廠長
+    </div>
+    <div class="msg bad" id="loginMsg"></div>
+  </section>
+
+  <!-- ---------- 主畫面 ---------- -->
+  <div id="pageMain" class="hide">
+    <div class="grid">
+
+      <div>
+        <div class="card">
+          <h2>工單清單（點選以報工）</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>工單號</th><th>品名</th><th>產線</th>
+                <th class="num">進度</th><th>狀態</th>
+              </tr>
+            </thead>
+            <tbody id="woBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>現場報工</h2>
+          <div id="noPick" class="hint">請先從左側點選一張工單。</div>
+
+          <div id="form" class="hide">
+            <label>工單</label>
+            <input id="fOrder" readonly>
+
+            <div class="row">
+              <div>
+                <label>良品數</label>
+                <input id="fGood" type="number" value="10" min="0">
+              </div>
+              <div>
+                <label>不良數</label>
+                <input id="fBad" type="number" value="1" min="0">
+              </div>
+            </div>
+
+            <div class="row">
+              <div>
+                <label>不良原因</label>
+                <select id="fReason">
+                  <option value="SCRATCH">刮傷</option>
+                  <option value="DIMENSION">尺寸超差</option>
+                  <option value="BURR">毛邊</option>
+                  <option value="">（無）</option>
+                </select>
+              </div>
+              <div>
+                <label>投入工時（分）</label>
+                <input id="fMin" type="number" value="60" min="0">
+              </div>
+            </div>
+
+            <label>冪等鍵 idempotencyKey</label>
+            <input id="fKey" readonly>
+
+            <div class="actions row">
+              <button id="btnSend">送出報工</button>
+              <button id="btnAgain" class="ghost" disabled>用同一把鍵再送一次</button>
+            </div>
+            <div class="hint">
+              右邊那顆是這個系統的重點示範：帶著<b>同一個冪等鍵</b>重送，
+              後端只會認第一次，庫存不會被扣第二次。
+            </div>
+
+            <div class="msg" id="out"></div>
+          </div>
+        </div>
+
+        <div class="card" id="matCard" style="display:none">
+          <h2>本次扣料明細</h2>
+          <table>
+            <thead>
+              <tr><th>物料</th><th class="num">耗用</th><th class="num">扣帳後庫存</th></tr>
+            </thead>
+            <tbody id="matBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ---------- 狀態 ----------
+let token = null;
+let picked = null;   // 目前選中的工單號
+let lastKey = null;  // 上一次送出的冪等鍵，供「再送一次」使用
+
+const $ = id => document.getElementById(id);
+
+// ---------- 與後端溝通 ----------
+// 後端統一回應格式為 { success, data, code, message }，這裡一次處理掉，
+// 讓上層只要關心成功的資料或一句中文錯誤訊息。
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      ...(options.headers || {})
+    }
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!body.success) {
+    const err = new Error(body.message || ('HTTP ' + res.status));
+    err.code = body.code;
+    throw err;
+  }
+  return body.data;
+}
+
+// ---------- 登入 ----------
+async function login() {
+  $('loginMsg').className = 'msg bad';
+  try {
+    const d = await api('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: $('u').value, password: $('p').value })
+    });
+    token = d.token;
+    $('who').textContent = `${d.displayName}（${roleLabel(d.role)}${d.lineCode ? ' · ' + d.lineCode : ''}）`;
+    $('pageLogin').classList.add('hide');
+    $('pageMain').classList.remove('hide');
+    $('btnOut').classList.remove('hide');
+    await loadOrders();
+  } catch (e) {
+    $('loginMsg').textContent = e.message;
+    $('loginMsg').classList.add('on');
+  }
+}
+
+function roleLabel(r) {
+  return { OPERATOR: '作業員', LEADER: '線長', MANAGER: '廠長' }[r] || r;
+}
+
+function logout() {
+  token = null; picked = null; lastKey = null;
+  $('pageMain').classList.add('hide');
+  $('btnOut').classList.add('hide');
+  $('pageLogin').classList.remove('hide');
+  $('loginMsg').classList.remove('on');
+}
+
+// ---------- 工單清單 ----------
+async function loadOrders() {
+  const page = await api('/api/v1/work-orders?size=20');
+  const tbody = $('woBody');
+  tbody.innerHTML = '';
+
+  page.content.forEach(w => {
+    const pct = Math.min(100, Math.round(w.producedQty / w.plannedQty * 100));
+    const tr = document.createElement('tr');
+    tr.className = 'pick' + (w.orderNo === picked ? ' on' : '');
+    tr.innerHTML = `
+      <td><code>${w.orderNo}</code></td>
+      <td>${w.productName}</td>
+      <td>${w.lineCode}</td>
+      <td class="num">
+        ${w.producedQty} / ${w.plannedQty}
+        <div class="bar"><i style="width:${pct}%"></i></div>
+      </td>
+      <td><span class="tag s-${w.status}">${w.statusLabel}</span></td>`;
+    tr.onclick = () => pick(w);
+    tbody.appendChild(tr);
+  });
+}
+
+function pick(w) {
+  picked = w.orderNo;
+  $('fOrder').value = `${w.orderNo}　${w.productName}`;
+  $('noPick').classList.add('hide');
+  $('form').classList.remove('hide');
+  $('out').classList.remove('on');
+  $('matCard').style.display = 'none';
+  $('btnAgain').disabled = true;
+  newKey();
+  loadOrders();
+}
+
+// 冪等鍵由前端產生：同一次現場操作重送時值不變，換一筆才換鍵。
+// 實務上會用「裝置編號 + 時間戳 + 序號」，這裡用 UUID 表達同樣的意思。
+function newKey() {
+  lastKey = 'ui-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random());
+  $('fKey').value = lastKey;
+}
+
+// ---------- 報工 ----------
+async function submit(reuseKey) {
+  if (!reuseKey) newKey();
+  $('btnSend').disabled = true;
+  $('btnAgain').disabled = true;
+
+  try {
+    const d = await api('/api/v1/production-reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        orderNo: picked,
+        warehouseCode: 'WH-RAW',
+        machineCode: 'MC-01',
+        goodQty: Number($('fGood').value),
+        defectQty: Number($('fBad').value),
+        defectReason: $('fReason').value || null,
+        workMinutes: Number($('fMin').value),
+        idempotencyKey: lastKey
+      })
+    });
+    showResult(d);
+  } catch (e) {
+    show('bad', `${e.message}${e.code ? `（${e.code}）` : ''}`);
+    $('matCard').style.display = 'none';
+  } finally {
+    $('btnSend').disabled = false;
+    $('btnAgain').disabled = false;
+    await loadOrders();
+  }
+}
+
+function showResult(d) {
+  if (d.duplicated) {
+    // 重送：後端認出是同一筆，沒有重複扣料。這是要讓人看見的行為，不是錯誤。
+    show('dup',
+      `已受理過，未重複計算。<br>` +
+      `回傳的是第一次的報工紀錄 #${d.reportId}，本次沒有再扣任何物料。`);
+    $('matCard').style.display = 'none';
+  } else {
+    show('ok',
+      `報工成功（紀錄 #${d.reportId}）<br>` +
+      `本次良品 ${d.goodQty}、不良 ${d.defectQty}；` +
+      `工單累計良品 ${d.accumulatedGoodQty} / ${d.plannedQty}`);
+    renderMaterials(d.consumedMaterials);
+  }
+}
+
+function renderMaterials(list) {
+  if (!list || !list.length) { $('matCard').style.display = 'none'; return; }
+  $('matBody').innerHTML = list.map(m => `
+    <tr>
+      <td><code>${m.materialCode}</code></td>
+      <td class="num">${m.qty}</td>
+      <td class="num">${m.balanceAfter}</td>
+    </tr>`).join('');
+  $('matCard').style.display = '';
+}
+
+function show(kind, html) {
+  const el = $('out');
+  el.className = 'msg on ' + kind;
+  el.innerHTML = html;
+}
+
+// ---------- 綁定 ----------
+$('btnIn').onclick = login;
+$('btnOut').onclick = logout;
+$('btnSend').onclick = () => submit(false);
+$('btnAgain').onclick = () => submit(true);
+$('p').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+</script>
+
+</body>
+</html>

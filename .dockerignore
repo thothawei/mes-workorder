@@ -1,0 +1,14 @@
+# 建置產物由映像檔內部重新編譯，不需要（也不該）從本機帶進去——
+# target/ 動輒數百 MB，會拖慢每一次 docker build 的 context 傳輸。
+target/
+
+.git/
+.github/
+.idea/
+*.iml
+.vscode/
+
+.DS_Store
+*.log
+README.md
+docs/

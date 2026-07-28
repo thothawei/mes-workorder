@@ -7,7 +7,10 @@ services:
       POSTGRES_USER: mes
       POSTGRES_PASSWORD: mes
     ports:
-      - "5432:5432"
+      # 對外開 15432 而不是 5432：開發機上本來就常駐一個 PostgreSQL 或別的專案的容器，
+      # 直接佔用 5432 會讓 clone 下來的人第一步就撞到 port 衝突。
+      # app 容器是走內部網路連 db:5432，這個映射純粹是給你用 GUI 工具連進來看資料的。
+      - "15432:5432"
     volumes:
       - mes-pgdata:/var/lib/postgresql/data
     healthcheck:
