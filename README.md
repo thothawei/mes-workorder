@@ -1,7 +1,8 @@
 # 工單報工與物料扣帳系統
 
-<!-- push 到 GitHub 後這顆 badge 才會顯示。若你的 repo 位置不同，改下面這行的 帳號/專案名 -->
 [![CI](https://github.com/thothawei/mes-workorder/actions/workflows/ci.yml/badge.svg)](https://github.com/thothawei/mes-workorder/actions/workflows/ci.yml)
+[![Java 17](https://img.shields.io/badge/Java-17-orange)](https://adoptium.net/)
+[![Spring Boot 3.3.5](https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen)](https://spring.io/projects/spring-boot)
 
 模擬製造現場從**派工 → 報工 → 依 BOM 扣料 → 完工 → 日結**的完整流程，Java 後端專案。
 
@@ -15,7 +16,13 @@
 ## 三分鐘看完
 
 ```bash
-# 需要 Docker
+git clone https://github.com/thothawei/mes-workorder.git
+cd mes-workorder
+```
+
+需要 Docker：
+
+```bash
 docker compose up -d
 ```
 
@@ -24,6 +31,8 @@ docker compose up -d
 ```bash
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=h2
 ```
+
+兩種方式都不需要先安裝 Maven——專案附 wrapper，也不需要設定任何環境變數或申請任何金鑰。
 
 | 入口 | 位置 |
 |---|---|
@@ -158,9 +167,11 @@ POST /api/v1/production-reports
 
 ## 測試
 
+共 **60 項：40 個單元測試 + 20 個整合測試**，每次 push 由 CI 全部跑一遍。
+
 ```bash
-./mvnw test      # 單元測試，秒級，不需要 Docker
-./mvnw verify    # ＋整合測試，需要 Docker（Testcontainers 會起真的 PostgreSQL）
+./mvnw test      # 單元測試 40 項，秒級，不需要 Docker
+./mvnw verify    # ＋整合測試 20 項，需要 Docker（Testcontainers 會起真的 PostgreSQL）
 ```
 
 | 測試 | 驗證什麼 |
@@ -246,6 +257,7 @@ URL 對應表在改路由時容易漏改，方法層註解跟著程式碼走，�
 | API 文件 | springdoc-openapi | Apache 2.0 |
 | 測試 | JUnit 5 + AssertJ + Testcontainers | EPL / Apache 2.0 |
 | 建置 | Maven（附 wrapper） | Apache 2.0 |
+| CI | GitHub Actions | 公開 repo 免費 |
 
 ### 建置需要 JDK 17
 
@@ -268,7 +280,7 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 傳產系統活得久、改需求頻繁，功能內聚讓「加一個品檢關卡」只動一個資料夾。
 
 ```
-com.example.mes
+src/main/java/com/example/mes/
 ├── common/       共用：例外轉譯、統一回應、稽核欄位
 ├── security/     JWT、角色、過濾鏈
 ├── workorder/    【聚合根】工單 + 狀態機
@@ -276,6 +288,10 @@ com.example.mes
 ├── material/     物料、BOM、庫存、異動流水
 ├── report/       報表（手寫原生 SQL）
 └── batch/        日結批次
+
+src/main/resources/
+├── db/migration/     Flyway：V1 建 schema、V2 種子資料
+└── static/index.html 現場報工頁（單一檔案、零外部依賴）
 ```
 
 各層職責邊界、資料模型與完整設計說明見 [docs/architecture.md](docs/architecture.md)。
