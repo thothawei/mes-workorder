@@ -12,3 +12,6 @@ target/
 
 .DS_Store
 *.log
+
+# 面試準備等私人文件，不推上公開 repo
+*.local.md
