@@ -128,16 +128,21 @@ ProductionReportService.submit()   ← @Transactional 邊界從這裡開始
    │      Entity 內部檢查：狀態是否允許報工、累計產出是否超過計畫量
    │      RELEASED 狀態時自動轉 IN_PROGRESS（首次報工即開工）
    │
-   ├─ 4. 依 BOM 展開應扣物料 = 良品數 × 每單位用量
-   │      InventoryService.consume() 逐項扣帳
-   │      庫存不足 → throw InsufficientInventoryException
+   ├─ 4. saveAndFlush 寫入 production_report
+   │      flush 讓 idempotency_key 的 UNIQUE 約束在這一刻就檢查——
+   │      併發重送會在「還沒扣任何料」之前就被擋下
+   │      同時取得 report id，供下一步的流水指回這筆報工
    │
-   ├─ 5. 寫入 material_transaction 流水（可追溯每一次扣料的來源報工單）
-   │
-   └─ 6. 寫入 production_report
+   └─ 5. 依 BOM 展開應扣物料 = 良品數 × 每單位用量 ×(1+損耗率)
+          InventoryService.consumeByBom() 逐項扣帳並寫 material_transaction 流水
+          庫存不足 → throw InsufficientInventoryException
         ↓
    交易提交；任何一步拋例外 → 全部 rollback，不留半筆髒資料
 ```
+
+> 步驟 4 在步驟 5 之前是刻意的：先讓資料庫的唯一鍵擋掉重送，再去動庫存。
+> 反過來寫也能保證正確（交易會回滾），但會白扣一輪料又回滾，
+> 在尖峰時多消耗鎖與 IO。
 
 ### 為什麼工單用悲觀鎖、庫存用樂觀鎖
 
